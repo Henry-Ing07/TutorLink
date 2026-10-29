@@ -39,7 +39,7 @@ class AvisosWorker(context: Context, params: WorkerParameters) : CoroutineWorker
         val sesion = Sesion(applicationContext)
         if (sesion.token == null) return Result.success()
         return try {
-            val nuevos = Api(sesion).avisos(sesion.ultimoAviso)
+            val nuevos = Api(sesion).avisos(sesion.ultimoAviso, incluirMensajes = true)
             if (nuevos.isNotEmpty()) {
                 // Primera descarga tras iniciar sesión: no se repiten avisos viejos.
                 if (sesion.ultimoAviso != 0) nuevos.filterNot { it.leida }.forEach(::mostrar)
@@ -61,8 +61,9 @@ class AvisosWorker(context: Context, params: WorkerParameters) : CoroutineWorker
         ) return
         crearCanal(contexto)
         val abrir = PendingIntent.getActivity(
-            contexto, 0,
-            Intent(contexto, MainActivity::class.java).putExtra(MainActivity.EXTRA_AVISOS, true),
+            contexto, if (aviso.tipo == "mensaje") 1 else 0,
+            Intent(contexto, MainActivity::class.java)
+                .putExtra(MainActivity.EXTRA_DESTINO, if (aviso.tipo == "mensaje") "mensajes" else "avisos"),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val notificacion = NotificationCompat.Builder(contexto, CANAL)
@@ -81,7 +82,7 @@ class AvisosWorker(context: Context, params: WorkerParameters) : CoroutineWorker
 
         fun crearCanal(context: Context) {
             val canal = NotificationChannel(CANAL, "Avisos de clases", NotificationManager.IMPORTANCE_HIGH)
-            canal.description = "Creación, cambio o cancelación de tus clases"
+            canal.description = "Clases, avisos de tus docentes y mensajes"
             context.getSystemService(NotificationManager::class.java).createNotificationChannel(canal)
         }
 

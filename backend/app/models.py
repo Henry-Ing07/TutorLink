@@ -124,7 +124,10 @@ class Notificacion(db.Model):
     destinatario_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"), nullable=False)
     # Si el aviso va al acudiente, aquí queda el estudiante al que se refiere.
     estudiante_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"), nullable=True)
-    clase_id = db.Column(db.Integer, db.ForeignKey("clases.id"), nullable=False)
+    # Los avisos de clase llevan clase_id; los anuncios y mensajes pueden no tenerla.
+    clase_id = db.Column(db.Integer, db.ForeignKey("clases.id"), nullable=True)
+    # Quien originó el aviso cuando es una persona (anuncio o mensaje del docente, etc.).
+    remitente_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"), nullable=True)
     tipo = db.Column(db.String(12), nullable=False)
     titulo = db.Column(db.String(120), nullable=False)
     mensaje = db.Column(db.String(400), nullable=False)
@@ -144,11 +147,62 @@ class Notificacion(db.Model):
         return {
             "id": self.id,
             "clase_id": self.clase_id,
+            "remitente_id": self.remitente_id,
             "tipo": self.tipo,
             "titulo": self.titulo,
             "mensaje": self.mensaje,
             "leida": self.leida,
             "creada_en": self.creada_en.isoformat(timespec="seconds") + "Z",
+        }
+
+
+class Anuncio(db.Model):
+    """Aviso que el docente escribe a sus estudiantes (y acudientes de los menores)."""
+    __tablename__ = "anuncios"
+
+    id = db.Column(db.Integer, primary_key=True)
+    docente_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"), nullable=False)
+    clase_id = db.Column(db.Integer, db.ForeignKey("clases.id"), nullable=True)
+    titulo = db.Column(db.String(80), nullable=False)
+    mensaje = db.Column(db.String(400), nullable=False)
+    destinatarios = db.Column(db.Integer, nullable=False, default=0)
+    creado_en = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+    clase = db.relationship("Clase")
+
+    def a_dict(self):
+        return {
+            "id": self.id,
+            "titulo": self.titulo,
+            "mensaje": self.mensaje,
+            "clase": self.clase.resumen() if self.clase else None,
+            "destinatarios": self.destinatarios,
+            "creado_en": self.creado_en.isoformat(timespec="seconds") + "Z",
+        }
+
+
+class Mensaje(db.Model):
+    """Mensaje privado entre un docente y un estudiante mayor de edad o un acudiente."""
+    __tablename__ = "mensajes"
+
+    id = db.Column(db.Integer, primary_key=True)
+    remitente_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"), nullable=False)
+    destinatario_id = db.Column(db.Integer, db.ForeignKey("usuarios.id"), nullable=False)
+    texto = db.Column(db.String(1000), nullable=False)
+    leido = db.Column(db.Boolean, nullable=False, default=False)
+    creado_en = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        db.Index("ix_mensajes_par", "remitente_id", "destinatario_id", "id"),
+    )
+
+    def a_dict(self, yo_id):
+        return {
+            "id": self.id,
+            "texto": self.texto,
+            "mio": self.remitente_id == yo_id,
+            "leido": self.leido,
+            "creado_en": self.creado_en.isoformat(timespec="seconds") + "Z",
         }
 
 

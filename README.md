@@ -16,7 +16,14 @@ acudientes de menores reciben un aviso cuando una clase se crea, cambia o se can
 | HU-04 Avisos a estudiante y acudiente del menor (RF-05) | Must | Implementada |
 | HU-02 Franja recurrente semanal; editar/cancelar una ocurrencia (RF-03) | Should | Implementada |
 | HU-06 Historial de asesorías | Could | No incluida |
-| HU-05 Chat por clase | Won't (esta vez) | No incluida: WhatsApp sigue siendo el canal |
+| HU-05 Chat por clase | Won't (esta vez) | Reemplazada por mensajes privados (ver abajo) |
+
+**Cambio de alcance posterior a la FPI-07** (ADR-0006, pendiente de registrar en la siguiente FPI):
+- Avisos que el docente escribe a una clase, a algunos estudiantes o a todos; también llegan a
+  los acudientes de los menores.
+- Mensajes privados entre el docente y sus estudiantes mayores de edad, y entre el docente y los
+  acudientes de sus estudiantes menores. Con los menores no hay mensajes directos.
+- Vista de solo lectura para el acudiente con las clases del menor a su cargo.
 
 Fuera de la frontera del sistema (FPI-04): pagos, videollamadas, material de estudio,
 calificaciones y captación de alumnos.
@@ -49,7 +56,10 @@ python wsgi.py                # http://localhost:5000
 
 Usuarios de demostración (todos con la contraseña `tutorlink123`):
 `docente@demo.co`, `ana@demo.co` (estudiante), `tomas@demo.co` (estudiante menor),
-`acudiente@demo.co` (acudiente de Tomás).
+`acudiente@demo.co` (acudiente de Tomás). Incluyen un aviso del docente y conversaciones de ejemplo.
+
+Si la base de datos es de una versión anterior (sin las tablas `anuncios` y `mensajes`), bórrala
+(`backend/instance/tutorlink.db`) y vuelve a ejecutar `init-db` y `seed`.
 
 Pruebas y estilo (DoD puntos 2 y 3):
 

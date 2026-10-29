@@ -57,12 +57,34 @@ class Api(private val sesion: Sesion, private val baseUrl: String = BuildConfig.
     suspend fun cancelar(id: Int, alcance: String) =
         pedir("POST", "/clases/$id/cancelar", JSONObject().put("alcance", alcance))
 
-    suspend fun avisos(despuesDe: Int = 0): List<Aviso> =
-        Aviso.lista(pedirLista("/notificaciones/me?despues_de=$despuesDe"))
+    suspend fun avisos(despuesDe: Int = 0, incluirMensajes: Boolean = false): List<Aviso> {
+        val extra = if (incluirMensajes) "&incluir_mensajes=1" else ""
+        return Aviso.lista(pedirLista("/notificaciones/me?despues_de=$despuesDe$extra"))
+    }
 
     suspend fun marcarLeido(id: Int) {
         pedir("POST", "/notificaciones/$id/leida")
     }
+
+    suspend fun clasesDeMisMenores(): List<Clase> = Clase.lista(pedirLista("/acudientes/me/clases"))
+
+    // ---------- Avisos del docente ----------
+
+    suspend fun enviarAnuncio(datos: JSONObject) = pedir("POST", "/anuncios", datos)
+
+    suspend fun anunciosEnviados(): List<Anuncio> = Anuncio.lista(pedirLista("/anuncios/enviados"))
+
+    // ---------- Mensajes privados ----------
+
+    suspend fun contactos(): List<Contacto> = Contacto.lista(pedirLista("/contactos"))
+
+    suspend fun mensajesNoLeidos(): Int = pedir("GET", "/mensajes/no-leidos").optInt("no_leidos")
+
+    suspend fun conversacion(con: Int, despuesDe: Int = 0): List<MensajeChat> =
+        MensajeChat.lista(pedirLista("/mensajes/$con?despues_de=$despuesDe"))
+
+    suspend fun enviarMensaje(a: Int, texto: String) =
+        MensajeChat.de(pedir("POST", "/mensajes/$a", JSONObject().put("texto", texto)))
 
     private fun guardarSesion(json: JSONObject): Usuario {
         val usuario = Usuario.de(json.getJSONObject("usuario"))

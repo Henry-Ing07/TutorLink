@@ -2,15 +2,19 @@ package com.tutorlink.app.ui
 
 import android.app.Application
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.tutorlink.app.avisos.AvisosWorker
+import com.tutorlink.app.data.Anuncio
 import com.tutorlink.app.data.Api
 import com.tutorlink.app.data.Aviso
 import com.tutorlink.app.data.Clase
+import com.tutorlink.app.data.Contacto
 import com.tutorlink.app.data.ErrorApi
+import com.tutorlink.app.data.MensajeChat
 import com.tutorlink.app.data.Sesion
 import com.tutorlink.app.data.SinConexion
 import com.tutorlink.app.data.Usuario
@@ -23,14 +27,15 @@ import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.temporal.TemporalAdjusters
 
+enum class Pestana { CLASES, MENSAJES, AVISOS }
+
 sealed interface Pantalla {
-    data object Login : Pantalla
-    data object Registro : Pantalla
-    data object Agenda : Pantalla
+    data object Acceso : Pantalla
+    data object Principal : Pantalla
     data class FormClase(val editando: Clase?) : Pantalla
     data class Detalle(val clase: Clase) : Pantalla
-    data object MisClases : Pantalla
-    data object Avisos : Pantalla
+    data class Chat(val contacto: Contacto) : Pantalla
+    data class NuevoAviso(val clase: Clase?) : Pantalla
 }
 
 /** Estado del formulario de clase. Vive en el ViewModel para no perder lo escrito (RNF-02). */
@@ -46,15 +51,35 @@ data class FormularioClase(
     val guardando: Boolean = false,
 )
 
+enum class Destino { TODOS, CLASE, ESTUDIANTES }
+
+data class FormularioAviso(
+    val titulo: String = "",
+    val mensaje: String = "",
+    val destino: Destino = Destino.TODOS,
+    val clase: Clase? = null,
+    val estudiantes: List<Usuario> = emptyList(),
+    val error: String? = null,
+    val enviando: Boolean = false,
+)
+
 class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val sesion = Sesion(app)
     private val api = Api(sesion)
 
     var usuario by mutableStateOf(sesion.usuario)
         private set
-    private var pila by mutableStateOf(listOf(inicio()))
+    val rol get() = usuario?.rol.orEmpty()
+
+    private var pila by mutableStateOf(listOf(if (sesion.usuario == null) Pantalla.Acceso else Pantalla.Principal))
     val pantalla get() = pila.last()
     val puedeVolver get() = pila.size > 1
+
+    /** true al avanzar, false al volver: decide hacia dónde se desliza la transición. */
+    var avanzando by mutableStateOf(true)
+        private set
+    var pestana by mutableStateOf(Pestana.CLASES)
+        private set
 
     var cargando by mutableStateOf(false)
         private set
@@ -68,45 +93,66 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var agenda by mutableStateOf<List<Clase>>(emptyList())
         private set
+    var proximas by mutableStateOf<List<Clase>>(emptyList())
+        private set
     var misClases by mutableStateOf<List<Clase>?>(null)
         private set
     var avisos by mutableStateOf<List<Aviso>>(emptyList())
         private set
+    var anuncios by mutableStateOf<List<Anuncio>>(emptyList())
+        private set
+    var contactos by mutableStateOf<List<Contacto>?>(null)
+        private set
+    var chat by mutableStateOf<List<MensajeChat>>(emptyList())
+        private set
     var conocidos by mutableStateOf<List<Usuario>>(emptyList())
         private set
     var formulario by mutableStateOf(FormularioClase())
+        private set
+    var formAviso by mutableStateOf(FormularioAviso())
+        private set
+
+    var mensajesSinLeer by mutableIntStateOf(0)
+        private set
+    var avisosSinLeer by mutableIntStateOf(0)
         private set
 
     init {
         if (usuario != null) entrar()
     }
 
-    private fun inicio(): Pantalla = when (sesion.usuario?.rol) {
-        null -> Pantalla.Login
-        "docente" -> Pantalla.Agenda
-        "estudiante" -> Pantalla.MisClases
-        else -> Pantalla.Avisos
-    }
-
     // ---------- Navegación ----------
 
     fun ir(destino: Pantalla) {
+        avanzando = true
         pila = pila + destino
         sinConexion = false
         when (destino) {
             is Pantalla.FormClase -> abrirFormulario(destino.editando)
-            Pantalla.Avisos -> cargarAvisos()
+            is Pantalla.Chat -> abrirChat(destino.contacto)
+            is Pantalla.NuevoAviso -> abrirNuevoAviso(destino.clase)
             else -> Unit
         }
     }
 
     fun volver() {
-        if (puedeVolver) pila = pila.dropLast(1)
+        if (!puedeVolver) return
+        avanzando = false
+        pila = pila.dropLast(1)
         recargar()
     }
 
-    private fun reiniciar(destino: Pantalla) {
-        pila = listOf(destino)
+    fun elegirPestana(nueva: Pestana) {
+        if (pestana == nueva) return
+        avanzando = nueva.ordinal > pestana.ordinal
+        pestana = nueva
+        sinConexion = false
+        recargar()
+    }
+
+    private fun alInicio() {
+        avanzando = false
+        pila = listOf(Pantalla.Principal)
     }
 
     // ---------- Sesión ----------
@@ -115,13 +161,19 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     fun registrar(datos: JSONObject) = accederCon { api.registro(datos) }
 
+    fun limpiarErrorAcceso() {
+        errorAcceso = null
+    }
+
     private fun accederCon(accion: suspend () -> Usuario) {
         errorAcceso = null
         viewModelScope.launch {
             cargando = true
             try {
                 usuario = accion()
-                reiniciar(inicio())
+                pestana = Pestana.CLASES
+                avanzando = true
+                pila = listOf(Pantalla.Principal)
                 entrar()
             } catch (e: SinConexion) {
                 errorAcceso = "Sin conexión. Revisa tu señal e intenta de nuevo."
@@ -143,19 +195,45 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         sesion.cerrar()
         usuario = null
         agenda = emptyList()
+        proximas = emptyList()
         misClases = null
         avisos = emptyList()
-        reiniciar(Pantalla.Login)
+        anuncios = emptyList()
+        contactos = null
+        mensajesSinLeer = 0
+        avisosSinLeer = 0
+        avanzando = false
+        pila = listOf(Pantalla.Acceso)
     }
 
     // ---------- Consultas ----------
 
     fun recargar() {
+        if (usuario == null) return
         when (pantalla) {
-            Pantalla.Agenda -> cargarAgenda()
-            Pantalla.MisClases -> cargarMisClases()
-            Pantalla.Avisos -> cargarAvisos()
+            Pantalla.Principal -> when (pestana) {
+                Pestana.CLASES -> if (rol == "docente") cargarAgenda() else cargarMisClases()
+                Pestana.MENSAJES -> cargarContactos()
+                Pestana.AVISOS -> if (rol == "docente") cargarAnuncios() else cargarAvisos()
+            }
+            is Pantalla.Chat -> actualizarChat()
             else -> Unit
+        }
+        actualizarContadores()
+    }
+
+    fun abrirPestana(destino: Pestana) {
+        alInicio()
+        pestana = destino
+        recargar()
+    }
+
+    private fun actualizarContadores() {
+        viewModelScope.launch {
+            runCatching { mensajesSinLeer = api.mensajesNoLeidos() }
+            if (rol != "docente" && !(pantalla == Pantalla.Principal && pestana == Pestana.AVISOS)) {
+                runCatching { avisosSinLeer = api.avisos().count { !it.leida } }
+            }
         }
     }
 
@@ -166,24 +244,30 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun cargarAgenda() {
         val clave = "agenda_$semana"
-        consultar(
-            alFallarSinRed = { sesion.leerCache(clave)?.let { agenda = it } },
-        ) {
+        consultar(alFallarSinRed = { sesion.leerCache(clave)?.let { agenda = it } }) {
             agenda = api.agenda(semana.toString(), semana.plusDays(6).toString())
             sesion.guardarCache(clave, agenda)
+            val hoy = LocalDate.now()
+            proximas = api.agenda(hoy.toString(), hoy.plusDays(1).toString())
         }
     }
 
     private fun cargarMisClases() = consultar(
         alFallarSinRed = { misClases = sesion.leerCache("mis_clases") ?: misClases },
     ) {
-        misClases = api.misClases().also { sesion.guardarCache("mis_clases", it) }
+        val clases = if (rol == "acudiente") api.clasesDeMisMenores() else api.misClases()
+        misClases = clases.also { sesion.guardarCache("mis_clases", it) }
     }
 
     private fun cargarAvisos() = consultar {
         avisos = api.avisos()
+        avisosSinLeer = 0
         avisos.filterNot { it.leida }.forEach { runCatching { api.marcarLeido(it.id) } }
     }
+
+    private fun cargarAnuncios() = consultar { anuncios = api.anunciosEnviados() }
+
+    private fun cargarContactos() = consultar { contactos = api.contactos() }
 
     /** Ejecuta una consulta; sin red deja el último dato conocido y activa el aviso. */
     private fun consultar(alFallarSinRed: () -> Unit = {}, bloque: suspend () -> Unit) {
@@ -199,6 +283,105 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 if (e.codigo == 401) salir() else mensaje = e.message
             } finally {
                 cargando = false
+            }
+        }
+    }
+
+    // ---------- Mensajes privados ----------
+
+    private fun abrirChat(contacto: Contacto) {
+        chat = emptyList()
+        viewModelScope.launch {
+            try {
+                chat = api.conversacion(contacto.id)
+                sinConexion = false
+            } catch (e: SinConexion) {
+                sinConexion = true
+            } catch (e: ErrorApi) {
+                mensaje = e.message
+            }
+        }
+    }
+
+    /** Trae solo los mensajes nuevos; la pantalla lo llama cada pocos segundos. */
+    fun actualizarChat() {
+        val actual = pantalla as? Pantalla.Chat ?: return
+        viewModelScope.launch {
+            try {
+                val nuevos = api.conversacion(actual.contacto.id, chat.lastOrNull()?.id ?: 0)
+                if (nuevos.isNotEmpty()) chat = (chat + nuevos).distinctBy { it.id }
+                sinConexion = false
+            } catch (_: SinConexion) {
+                sinConexion = true
+            } catch (_: ErrorApi) {
+            }
+        }
+    }
+
+    fun enviarMensaje(texto: String, listo: () -> Unit) {
+        val actual = pantalla as? Pantalla.Chat ?: return
+        val limpio = texto.trim()
+        if (limpio.isEmpty()) return
+        viewModelScope.launch {
+            try {
+                val enviado = api.enviarMensaje(actual.contacto.id, limpio)
+                chat = (chat + enviado).distinctBy { it.id }
+                listo()
+            } catch (e: SinConexion) {
+                mensaje = "Sin conexión. Tu mensaje no se envió; sigue escrito para reintentar."
+            } catch (e: ErrorApi) {
+                mensaje = e.message
+            }
+        }
+    }
+
+    // ---------- Avisos del docente ----------
+
+    private fun abrirNuevoAviso(clase: Clase?) {
+        formAviso = FormularioAviso(destino = if (clase != null) Destino.CLASE else Destino.TODOS, clase = clase)
+        viewModelScope.launch {
+            runCatching { conocidos = api.misEstudiantes() }
+            runCatching {
+                val hoy = LocalDate.now()
+                proximas = api.agenda(hoy.toString(), hoy.plusDays(30).toString())
+            }
+        }
+    }
+
+    fun editarAviso(cambio: FormularioAviso.() -> FormularioAviso) {
+        formAviso = formAviso.cambio().copy(error = null)
+    }
+
+    fun enviarAviso() {
+        val f = formAviso
+        val error = when {
+            f.titulo.isBlank() -> "Escribe un título"
+            f.mensaje.isBlank() -> "Escribe el mensaje"
+            f.destino == Destino.CLASE && f.clase == null -> "Elige la clase"
+            f.destino == Destino.ESTUDIANTES && f.estudiantes.isEmpty() -> "Elige al menos un estudiante"
+            else -> null
+        }
+        if (error != null) {
+            formAviso = f.copy(error = error)
+            return
+        }
+        val datos = JSONObject().put("titulo", f.titulo.trim()).put("mensaje", f.mensaje.trim())
+        when (f.destino) {
+            Destino.TODOS -> datos.put("todos", true)
+            Destino.CLASE -> datos.put("clase_id", f.clase!!.id)
+            Destino.ESTUDIANTES -> datos.put("estudiantes", JSONArray(f.estudiantes.map { it.id }))
+        }
+        viewModelScope.launch {
+            formAviso = f.copy(enviando = true)
+            try {
+                val respuesta = api.enviarAnuncio(datos)
+                val n = respuesta.getJSONObject("anuncio").optInt("destinatarios")
+                mensaje = "Aviso enviado a $n destinatario(s)." + pendientes(respuesta)
+                abrirPestana(Pestana.AVISOS)
+            } catch (e: SinConexion) {
+                formAviso = f.copy(error = "Sin conexión. Tu aviso sigue aquí; toca Enviar para reintentar.")
+            } catch (e: ErrorApi) {
+                formAviso = f.copy(error = e.message)
             }
         }
     }
@@ -270,8 +453,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 semana = f.fecha.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
                 mensaje = mensajeGuardado(editando != null, respuesta)
-                reiniciar(Pantalla.Agenda)
-                cargarAgenda()
+                abrirPestana(Pestana.CLASES)
             } catch (e: SinConexion) {
                 // Flujo E3: no hay cambio parcial y lo escrito se conserva.
                 formulario = f.copy(error = "Sin conexión. Tus datos siguen aquí; toca Guardar para reintentar.")
@@ -280,7 +462,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 formulario = f.copy(
                     error = if (conflicto != null) {
                         "${e.message}: ${conflicto.materia}, ${Formato.diaCorto(conflicto.inicio)} " +
-                            "${Formato.rango(conflicto.inicio, conflicto.fin)}"
+                            Formato.rango(conflicto.inicio, conflicto.fin)
                     } else {
                         e.message
                     },
@@ -296,8 +478,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 val n = respuesta.optJSONArray("canceladas")?.length() ?: 1
                 mensaje = (if (n > 1) "Se cancelaron $n clases." else "Clase cancelada.") +
                     pendientes(respuesta)
-                reiniciar(Pantalla.Agenda)
-                cargarAgenda()
+                abrirPestana(Pestana.CLASES)
             } catch (e: SinConexion) {
                 mensaje = "Sin conexión. La clase no se canceló; intenta de nuevo."
             } catch (e: ErrorApi) {

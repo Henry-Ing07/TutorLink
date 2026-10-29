@@ -17,11 +17,12 @@ def create_app(config=None):
 
     db.init_app(app)
 
-    from . import api_auth, api_avisos, api_clases
+    from . import api_auth, api_avisos, api_clases, api_comunicacion
     from .seguridad import registrar_manejadores
     app.register_blueprint(api_auth.bp)
     app.register_blueprint(api_clases.bp)
     app.register_blueprint(api_avisos.bp)
+    app.register_blueprint(api_comunicacion.bp)
     registrar_manejadores(app)
 
     @app.get("/salud")
@@ -81,5 +82,24 @@ def _registrar_comandos(app):
             clase = Clase(docente_id=docente.id, materia=materia, estudiantes=alumnos)
             clase.programar(manana + timedelta(days=dias, hours=hora), duracion)
             db.session.add(clase)
+        db.session.flush()
+
+        from .models import Anuncio, Mensaje
+        from .notificaciones import avisar_anuncio, avisar_mensaje
+        anuncio = Anuncio(docente_id=docente.id, titulo="Bienvenidos a TutorLink",
+                          mensaje="Aquí verán sus clases y mis avisos. ¡Nos vemos pronto!")
+        db.session.add(anuncio)
+        db.session.flush()
+        anuncio.destinatarios = len(avisar_anuncio(anuncio, docente, [ana, tomas]))
+        for remitente, destinatario, texto in [
+            (docente, ana, "Hola Ana, ¿pudiste repasar los ejercicios de derivadas?"),
+            (ana, docente, "Sí profe, me quedó una duda con la regla de la cadena."),
+            (docente, acudiente, "Buenas tardes, Tomás va muy bien en Física."),
+        ]:
+            mensaje = Mensaje(remitente_id=remitente.id, destinatario_id=destinatario.id,
+                              texto=texto)
+            db.session.add(mensaje)
+            db.session.flush()
+            avisar_mensaje(mensaje, remitente)
         db.session.commit()
         click.echo("Datos de demostración cargados. Contraseña de todos: tutorlink123")

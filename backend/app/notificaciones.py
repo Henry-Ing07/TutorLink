@@ -72,16 +72,37 @@ def avisar(clase, tipo, estudiantes, anterior=None, sufijo=""):
     Devuelve las notificaciones creadas (aún sin despachar).
     """
     titulo, mensaje = _contenido(clase, tipo, anterior)
-    mensaje += sufijo
+    return _a_estudiantes(estudiantes, tipo, titulo, mensaje + sufijo, clase_id=clase.id)
+
+
+def avisar_anuncio(anuncio, docente, estudiantes):
+    """Aviso escrito por el docente; también llega al acudiente de cada menor."""
+    titulo = f"{docente.nombre}: {anuncio.titulo}"[:120]
+    return _a_estudiantes(estudiantes, "anuncio", titulo, anuncio.mensaje,
+                          clase_id=anuncio.clase_id, remitente_id=docente.id)
+
+
+def avisar_mensaje(mensaje, remitente):
+    """Notifica un mensaje privado nuevo a su destinatario."""
+    texto = mensaje.texto if len(mensaje.texto) <= 200 else mensaje.texto[:197] + "..."
+    aviso = Notificacion(destinatario_id=mensaje.destinatario_id, remitente_id=remitente.id,
+                         tipo="mensaje", titulo=f"Mensaje de {remitente.nombre}"[:120],
+                         mensaje=texto)
+    db.session.add(aviso)
+    return [aviso]
+
+
+def _a_estudiantes(estudiantes, tipo, titulo, mensaje, **campos):
+    """Un aviso por estudiante y otro para su acudiente si es menor (sin despachar)."""
     creadas = []
     for estudiante in estudiantes:
-        creadas.append(Notificacion(destinatario_id=estudiante.id, clase_id=clase.id,
-                                    tipo=tipo, titulo=titulo, mensaje=mensaje))
+        creadas.append(Notificacion(destinatario_id=estudiante.id, tipo=tipo, titulo=titulo,
+                                    mensaje=mensaje, **campos))
         if estudiante.es_menor and estudiante.acudiente_id:
             creadas.append(Notificacion(
                 destinatario_id=estudiante.acudiente_id, estudiante_id=estudiante.id,
-                clase_id=clase.id, tipo=tipo, titulo=titulo,
-                mensaje=f"Aviso para {estudiante.nombre}: {mensaje}"))
+                tipo=tipo, titulo=titulo,
+                mensaje=f"Aviso para {estudiante.nombre}: {mensaje}"[:400], **campos))
     db.session.add_all(creadas)
     return creadas
 

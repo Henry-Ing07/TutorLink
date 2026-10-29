@@ -10,8 +10,14 @@ bp = Blueprint("avisos", __name__, url_prefix="/notificaciones")
 @bp.get("/me")
 @requiere()
 def mis_avisos():
-    """Bandeja del usuario autenticado. `despues_de` permite descargar solo lo nuevo."""
+    """Bandeja del usuario autenticado. `despues_de` permite descargar solo lo nuevo.
+
+    Los avisos de mensajes privados solo se incluyen con `incluir_mensajes=1` (los usa
+    la app para la notificación del sistema; la pestaña Avisos no los muestra).
+    """
     consulta = Notificacion.query.filter_by(destinatario_id=g.usuario.id)
+    if request.args.get("incluir_mensajes") != "1":
+        consulta = consulta.filter(Notificacion.tipo != "mensaje")
     despues_de = request.args.get("despues_de", type=int)
     if despues_de:
         consulta = consulta.filter(Notificacion.id > despues_de)
