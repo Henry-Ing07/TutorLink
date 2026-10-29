@@ -1,0 +1,22 @@
+# Secretos (DoD punto 7)
+.env
+*.jks
+*.keystore
+local.properties
+
+# Python
+backend/.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+backend/instance/
+*.db
+
+# Android / Gradle
+android/.gradle/
+android/build/
+android/app/build/
+android/.kotlin/
+.idea/
+*.iml
+captures/
