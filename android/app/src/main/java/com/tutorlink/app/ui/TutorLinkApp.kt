@@ -42,7 +42,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
@@ -61,6 +63,8 @@ fun TutorLinkApp(vm: AppViewModel) {
             }
         }
         BackHandler(enabled = vm.puedeVolver) { vm.volver() }
+        // Fuera de la transición entre pantallas, para que no se dibuje dos veces.
+        DialogoOfertaHuella(vm)
 
         // Transición entre pantallas: se desliza hacia adelante o hacia atrás según la navegación.
         AnimatedContent(
@@ -98,6 +102,8 @@ private fun Marco(vm: AppViewModel, pantalla: Pantalla, snackbar: SnackbarHostSt
     val expandido by remember(lista) { derivedStateOf { lista.firstVisibleItemIndex == 0 } }
     val principal = pantalla == Pantalla.Principal
     val docente = vm.rol == "docente"
+    var ajustesHuella by remember { mutableStateOf(false) }
+    if (ajustesHuella) DialogoAjustesHuella(vm) { ajustesHuella = false }
 
     Scaffold(
         topBar = {
@@ -110,6 +116,9 @@ private fun Marco(vm: AppViewModel, pantalla: Pantalla, snackbar: SnackbarHostSt
                 },
                 actions = {
                     if (principal) {
+                        IconButton(onClick = { ajustesHuella = true }) {
+                            Icon(painterResource(R.drawable.ic_fingerprint), "Ingreso con huella")
+                        }
                         IconButton(onClick = vm::salir) { Icon(painterResource(R.drawable.ic_logout), "Cerrar sesión") }
                     }
                 },

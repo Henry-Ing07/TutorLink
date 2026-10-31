@@ -4,17 +4,18 @@ import android.Manifest
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.fragment.app.FragmentActivity
 import com.tutorlink.app.avisos.AvisosWorker
 import com.tutorlink.app.ui.AppViewModel
 import com.tutorlink.app.ui.Pestana
 import com.tutorlink.app.ui.TutorLinkApp
 
-class MainActivity : ComponentActivity() {
+// FragmentActivity (y no ComponentActivity) porque el diálogo de huella del sistema lo exige.
+class MainActivity : FragmentActivity() {
     private val vm: AppViewModel by viewModels()
 
     private val permisoNotificaciones =

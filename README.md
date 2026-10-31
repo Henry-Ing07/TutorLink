@@ -84,6 +84,13 @@ Requisitos: Android Studio (con su JDK incluido) y el SDK de Android 37.
    *release* exige HTTPS. (No se usa `10.0.2.2` porque Android 17 bloquea por defecto el
    acceso de las apps a la red local.)
 
+## Ingreso con huella
+
+Después de iniciar sesión con contraseña, la app ofrece **entrar con la huella** la próxima vez.
+También se activa o desactiva con el ícono de huella de la barra superior. La contraseña queda
+cifrada con una llave del Android Keystore que solo se abre con la huella. Si se registra otra
+huella en el celular, hay que volver a activarla con la contraseña (ADR-0007).
+
 ## Seguridad y datos personales
 
 - Contraseñas con bcrypt de costo 12; sesiones con JWT firmado (HS256).

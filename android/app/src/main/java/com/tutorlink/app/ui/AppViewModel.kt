@@ -14,6 +14,7 @@ import com.tutorlink.app.data.Aviso
 import com.tutorlink.app.data.Clase
 import com.tutorlink.app.data.Contacto
 import com.tutorlink.app.data.ErrorApi
+import com.tutorlink.app.data.Huella
 import com.tutorlink.app.data.MensajeChat
 import com.tutorlink.app.data.Sesion
 import com.tutorlink.app.data.SinConexion
@@ -66,6 +67,20 @@ data class FormularioAviso(
 class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val sesion = Sesion(app)
     private val api = Api(sesion)
+    val huella = Huella(app)
+
+    /** Cuenta asociada a la huella (null si no está activada). */
+    var cuentaHuella by mutableStateOf(huella.cuenta.takeIf { huella.activada })
+        private set
+
+    /** Correo y contraseña recién usados, para ofrecer activar la huella después del login. */
+    var ofrecerHuella by mutableStateOf<Pair<String, String>?>(null)
+        private set
+
+    private var huellaAlAbrir = true
+
+    /** true solo la primera vez que se muestra el login al abrir la app. */
+    fun consumirHuellaAlAbrir(): Boolean = huellaAlAbrir.also { huellaAlAbrir = false }
 
     var usuario by mutableStateOf(sesion.usuario)
         private set
@@ -157,15 +172,74 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---------- Sesión ----------
 
-    fun login(email: String, password: String) = accederCon { api.login(email.trim(), password) }
+    fun login(email: String, password: String) = accederCon(alEntrar = { ofrecerHuellaPara(email.trim().lowercase(), password) }) {
+        api.login(email.trim(), password)
+    }
 
-    fun registrar(datos: JSONObject) = accederCon { api.registro(datos) }
+    fun registrar(datos: JSONObject) = accederCon(alEntrar = {
+        ofrecerHuellaPara(datos.getString("email").lowercase(), datos.getString("password"))
+    }) { api.registro(datos) }
+
+    // ---------- Huella (ADR-0007) ----------
+
+    fun loginConHuella(email: String, password: String) = accederCon(conHuella = true) { api.login(email, password) }
+
+    private fun ofrecerHuellaPara(email: String, password: String) {
+        if (huella.disponible() && cuentaHuella != email) ofrecerHuella = email to password
+    }
+
+    fun descartarOfertaHuella() {
+        ofrecerHuella = null
+    }
+
+    fun huellaActivada(email: String) {
+        ofrecerHuella = null
+        cuentaHuella = email
+        mensaje = "Listo: la próxima vez podrás entrar con tu huella."
+    }
+
+    fun desactivarHuella() {
+        huella.desactivar()
+        cuentaHuella = null
+        mensaje = "Ingreso con huella desactivado."
+    }
+
+    /** Se registró otra huella en el celular y Android invalidó la llave. */
+    fun huellaInvalidada() {
+        huella.desactivar()
+        cuentaHuella = null
+        errorAcceso = "Se registró una huella nueva en este celular. Por seguridad, ingresa con tu " +
+            "contraseña y vuelve a activar el ingreso con huella."
+    }
+
+    fun errorHuella(texto: String) {
+        errorAcceso = texto
+    }
+
+    /** Verifica la contraseña de la cuenta actual antes de activar la huella desde el menú. */
+    fun verificarClave(password: String, alVerificar: (String, String) -> Unit, alFallar: (String) -> Unit) {
+        val email = usuario?.email?.lowercase() ?: return
+        viewModelScope.launch {
+            try {
+                api.login(email, password)
+                alVerificar(email, password)
+            } catch (e: SinConexion) {
+                alFallar("Sin conexión. Intenta de nuevo.")
+            } catch (e: ErrorApi) {
+                alFallar(if (e.codigo == 401) "La contraseña no es correcta." else e.message)
+            }
+        }
+    }
 
     fun limpiarErrorAcceso() {
         errorAcceso = null
     }
 
-    private fun accederCon(accion: suspend () -> Usuario) {
+    private fun accederCon(
+        conHuella: Boolean = false,
+        alEntrar: () -> Unit = {},
+        accion: suspend () -> Usuario,
+    ) {
         errorAcceso = null
         viewModelScope.launch {
             cargando = true
@@ -175,10 +249,18 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 avanzando = true
                 pila = listOf(Pantalla.Principal)
                 entrar()
+                alEntrar()
             } catch (e: SinConexion) {
                 errorAcceso = "Sin conexión. Revisa tu señal e intenta de nuevo."
             } catch (e: ErrorApi) {
-                errorAcceso = e.message
+                if (conHuella && e.codigo == 401) {
+                    // La contraseña guardada ya no sirve (se cambió): no se sigue intentando con ella.
+                    huella.desactivar()
+                    cuentaHuella = null
+                    errorAcceso = "Tu contraseña cambió. Ingresa con la nueva y vuelve a activar la huella."
+                } else {
+                    errorAcceso = e.message
+                }
             } finally {
                 cargando = false
             }
@@ -190,7 +272,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         recargar()
     }
 
+    /** Cierra la sesión. La huella sigue activada para volver a entrar con ella. */
     fun salir() {
+        ofrecerHuella = null
+        huellaAlAbrir = false
         AvisosWorker.detener(getApplication())
         sesion.cerrar()
         usuario = null

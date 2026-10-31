@@ -69,6 +69,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -271,11 +272,27 @@ private fun BotonPrincipal(texto: String, cargando: Boolean, habilitado: Boolean
 
 @Composable
 private fun FormLogin(vm: AppViewModel) {
-    var email by rememberSaveable { mutableStateOf("") }
+    var email by rememberSaveable { mutableStateOf(vm.cuentaHuella.orEmpty()) }
     var password by rememberSaveable { mutableStateOf("") }
     val listo = email.isNotBlank() && password.isNotBlank()
+    val cuentaHuella = vm.cuentaHuella
+    val actividad = LocalContext.current.actividad()
+    // Al abrir la app con la huella activada se pide directamente (no después de cerrar sesión).
+    LaunchedEffect(Unit) {
+        val alAbrir = vm.consumirHuellaAlAbrir()
+        if (cuentaHuella != null && alAbrir) ingresarConHuella(vm, actividad)
+    }
     Column(verticalArrangement = espacio) {
         Text("Bienvenido de nuevo", style = MaterialTheme.typography.titleLarge)
+        if (cuentaHuella != null) {
+            BotonHuella(vm, cuentaHuella)
+            Text(
+                "o escribe tu correo y contraseña",
+                Modifier.fillMaxWidth(), textAlign = TextAlign.Center,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         OutlinedTextField(
             email, { email = it }, Modifier.fillMaxWidth(), label = { Text("Correo") }, singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Next),
