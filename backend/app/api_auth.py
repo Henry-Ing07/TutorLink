@@ -5,7 +5,7 @@ from flask import Blueprint, g, jsonify, request
 
 from .extensions import db
 from .models import ROLES, Usuario
-from .seguridad import (ErrorApi, emitir_token, hashear_password, requiere,
+from .seguridad import (AVISOS, ErrorApi, emitir_token, hashear_password, requiere,
                         verificar_password)
 
 bp = Blueprint("auth", __name__, url_prefix="/auth")
@@ -52,7 +52,7 @@ def registro():
 
     db.session.add(usuario)
     db.session.commit()
-    return jsonify({"token": emitir_token(usuario), "usuario": usuario.perfil()}), 201
+    return jsonify(_credenciales(usuario)), 201
 
 
 @bp.post("/login")
@@ -65,7 +65,13 @@ def login():
         usuario = Usuario.query.filter_by(email=email.strip().lower()).first()
     if usuario is None or not verificar_password(password, usuario.password_hash):
         raise ErrorApi(401, "Correo o contraseña incorrectos")
-    return jsonify({"token": emitir_token(usuario), "usuario": usuario.perfil()})
+    return jsonify(_credenciales(usuario))
+
+
+def _credenciales(usuario):
+    """Token de sesión (la app lo guarda solo en memoria) y token que solo sirve para avisos."""
+    return {"token": emitir_token(usuario), "token_avisos": emitir_token(usuario, AVISOS),
+            "usuario": usuario.perfil()}
 
 
 @bp.get("/me")

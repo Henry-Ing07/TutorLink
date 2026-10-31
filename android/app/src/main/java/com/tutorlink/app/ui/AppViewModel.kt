@@ -65,7 +65,8 @@ data class FormularioAviso(
 )
 
 class AppViewModel(app: Application) : AndroidViewModel(app) {
-    private val sesion = Sesion(app)
+    // La sesión empieza vacía cada vez que se abre la app (ADR-0008).
+    private val sesion = Sesion(app).also { it.limpiarAlAbrir() }
     private val api = Api(sesion)
     val huella = Huella(app)
 
@@ -82,11 +83,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /** true solo la primera vez que se muestra el login al abrir la app. */
     fun consumirHuellaAlAbrir(): Boolean = huellaAlAbrir.also { huellaAlAbrir = false }
 
-    var usuario by mutableStateOf(sesion.usuario)
+    // Siempre se empieza en el acceso: la sesión no sobrevive al cierre de la app.
+    var usuario by mutableStateOf<Usuario?>(null)
         private set
     val rol get() = usuario?.rol.orEmpty()
 
-    private var pila by mutableStateOf(listOf(if (sesion.usuario == null) Pantalla.Acceso else Pantalla.Principal))
+    private var pila by mutableStateOf(listOf<Pantalla>(Pantalla.Acceso))
     val pantalla get() = pila.last()
     val puedeVolver get() = pila.size > 1
 
@@ -131,10 +133,6 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var avisosSinLeer by mutableIntStateOf(0)
         private set
-
-    init {
-        if (usuario != null) entrar()
-    }
 
     // ---------- Navegación ----------
 
@@ -250,6 +248,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 pila = listOf(Pantalla.Principal)
                 entrar()
                 alEntrar()
+                destinoPendiente?.let { abrirPestana(it) }
+                destinoPendiente = null
             } catch (e: SinConexion) {
                 errorAcceso = "Sin conexión. Revisa tu señal e intenta de nuevo."
             } catch (e: ErrorApi) {
@@ -305,6 +305,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             else -> Unit
         }
         actualizarContadores()
+    }
+
+    /** Pestaña pedida al tocar una notificación antes de iniciar sesión. */
+    private var destinoPendiente: Pestana? = null
+
+    fun abrirDesdeNotificacion(destino: Pestana) {
+        if (usuario == null) destinoPendiente = destino else abrirPestana(destino)
     }
 
     fun abrirPestana(destino: Pestana) {

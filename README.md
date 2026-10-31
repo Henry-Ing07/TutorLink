@@ -93,6 +93,10 @@ huella en el celular, hay que volver a activarla con la contraseña (ADR-0007).
 
 ## Seguridad y datos personales
 
+- **La sesión se cierra al cerrar la app** (salir con Atrás o quitarla de recientes); cambiar de
+  app no la cierra. Los avisos siguen llegando con un token que solo sirve para descargar la
+  bandeja de avisos (ADR-0008).
+
 - Contraseñas con bcrypt de costo 12; sesiones con JWT firmado (HS256).
 - Toda consulta se filtra por el usuario del token, nunca por un parámetro (ADR-0003).
 - El acceso a un recurso ajeno responde 403 sin cuerpo y queda en la bitácora de seguridad.

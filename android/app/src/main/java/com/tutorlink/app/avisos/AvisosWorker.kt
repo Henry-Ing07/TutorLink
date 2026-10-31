@@ -37,9 +37,10 @@ class AvisosWorker(context: Context, params: WorkerParameters) : CoroutineWorker
 
     override suspend fun doWork(): Result {
         val sesion = Sesion(applicationContext)
-        if (sesion.token == null) return Result.success()
+        // La app puede estar cerrada (sin sesión): se usa el token que solo sirve para avisos.
+        if (sesion.tokenAvisos == null) return Result.success()
         return try {
-            val nuevos = Api(sesion).avisos(sesion.ultimoAviso, incluirMensajes = true)
+            val nuevos = Api(sesion, soloAvisos = true).avisos(sesion.ultimoAviso, incluirMensajes = true)
             if (nuevos.isNotEmpty()) {
                 // Primera descarga tras iniciar sesión: no se repiten avisos viejos.
                 if (sesion.ultimoAviso != 0) nuevos.filterNot { it.leida }.forEach(::mostrar)

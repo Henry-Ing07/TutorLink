@@ -33,9 +33,20 @@ def verificar_password(password, password_hash):
     return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("ascii"))
 
 
-def emitir_token(usuario):
-    expira = datetime.now(timezone.utc) + timedelta(hours=current_app.config["TOKEN_HORAS"])
-    datos = {"sub": str(usuario.id), "rol": usuario.rol, "exp": expira}
+# Alcances del token (ADR-0008):
+# - "sesion": todo lo que el rol permite. La app lo guarda solo en memoria mientras está abierta.
+# - "avisos": SOLO descargar la bandeja de avisos; lo usa el celular en segundo plano.
+SESION = "sesion"
+AVISOS = "avisos"
+
+
+def emitir_token(usuario, alcance=SESION):
+    if alcance == AVISOS:
+        duracion = timedelta(days=current_app.config["TOKEN_AVISOS_DIAS"])
+    else:
+        duracion = timedelta(hours=current_app.config["TOKEN_HORAS"])
+    datos = {"sub": str(usuario.id), "rol": usuario.rol, "alcance": alcance,
+             "exp": datetime.now(timezone.utc) + duracion}
     return jwt.encode(datos, current_app.config["SECRET_KEY"], algorithm="HS256")
 
 
@@ -52,18 +63,24 @@ def _usuario_del_token():
     usuario = db.session.get(Usuario, int(datos["sub"]))
     if usuario is None:
         raise ErrorApi(401, "Sesión inválida")
-    return usuario
+    # Los tokens anteriores a ADR-0008 no traen alcance: equivalen a una sesión.
+    return usuario, datos.get("alcance", SESION)
 
 
-def requiere(*roles):
+def requiere(*roles, permite_avisos=False):
     """Exige token válido y, si se indican, uno de los roles permitidos.
 
     El usuario sale siempre del token, nunca de un parámetro del cliente (ADR-0003).
+    Un token de alcance "avisos" solo entra donde se indica `permite_avisos=True`.
     """
     def decorador(vista):
         @wraps(vista)
         def envoltura(*args, **kwargs):
-            g.usuario = _usuario_del_token()
+            g.usuario, alcance = _usuario_del_token()
+            if alcance == AVISOS and not permite_avisos:
+                denegar(f"{request.method} {request.path} (token de avisos)")
+            if alcance not in (SESION, AVISOS):
+                raise ErrorApi(401, "Sesión inválida")
             if roles and g.usuario.rol not in roles:
                 denegar(f"{request.method} {request.path}")
             return vista(*args, **kwargs)

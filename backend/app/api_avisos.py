@@ -8,7 +8,7 @@ bp = Blueprint("avisos", __name__, url_prefix="/notificaciones")
 
 
 @bp.get("/me")
-@requiere()
+@requiere(permite_avisos=True)
 def mis_avisos():
     """Bandeja del usuario autenticado. `despues_de` permite descargar solo lo nuevo.
 

@@ -12,6 +12,7 @@ class Config:
     SQLALCHEMY_ENGINE_OPTIONS = {"pool_pre_ping": True}
     BCRYPT_ROUNDS = int(os.environ.get("BCRYPT_ROUNDS", "12"))
     TOKEN_HORAS = int(os.environ.get("TOKEN_HORAS", "168"))
+    TOKEN_AVISOS_DIAS = int(os.environ.get("TOKEN_AVISOS_DIAS", "30"))
     UTC_OFFSET_HORAS = int(os.environ.get("UTC_OFFSET_HORAS", "-5"))
     NOTIFICADOR = os.environ.get("NOTIFICADOR", "bandeja")
     NOTIFICACION_MAX_INTENTOS = int(os.environ.get("NOTIFICACION_MAX_INTENTOS", "5"))

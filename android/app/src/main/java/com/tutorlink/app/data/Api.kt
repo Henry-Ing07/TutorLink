@@ -26,7 +26,14 @@ class SinConexion(causa: Throwable) : IOException(causa)
  * Cliente HTTP mínimo sobre HttpURLConnection y org.json, ambos incluidos en
  * Android: sin dependencias externas que auditar (ADR-0005).
  */
-class Api(private val sesion: Sesion, private val baseUrl: String = BuildConfig.API_URL) {
+class Api(
+    private val sesion: Sesion,
+    private val baseUrl: String = BuildConfig.API_URL,
+    /** En segundo plano se usa el token que solo sirve para descargar avisos (ADR-0008). */
+    private val soloAvisos: Boolean = false,
+) {
+    private val tokenEnUso get() = if (soloAvisos) sesion.tokenAvisos else sesion.token
+
 
     suspend fun login(email: String, password: String) =
         pedir("POST", "/auth/login", JSONObject().put("email", email).put("password", password))
@@ -88,7 +95,7 @@ class Api(private val sesion: Sesion, private val baseUrl: String = BuildConfig.
 
     private fun guardarSesion(json: JSONObject): Usuario {
         val usuario = Usuario.de(json.getJSONObject("usuario"))
-        sesion.iniciar(json.getString("token"), usuario)
+        sesion.iniciar(json.getString("token"), json.optString("token_avisos").ifEmpty { null }, usuario)
         return usuario
     }
 
@@ -108,7 +115,7 @@ class Api(private val sesion: Sesion, private val baseUrl: String = BuildConfig.
                 conexion.connectTimeout = 2_500
                 conexion.readTimeout = 10_000
                 conexion.setRequestProperty("Accept", "application/json")
-                sesion.token?.let { conexion.setRequestProperty("Authorization", "Bearer $it") }
+                tokenEnUso?.let { conexion.setRequestProperty("Authorization", "Bearer $it") }
                 if (cuerpo != null) {
                     conexion.doOutput = true
                     conexion.setRequestProperty("Content-Type", "application/json; charset=utf-8")
@@ -130,7 +137,10 @@ class Api(private val sesion: Sesion, private val baseUrl: String = BuildConfig.
 
     private fun errorDe(codigo: Int, texto: String): ErrorApi {
         val json = runCatching { JSONObject(texto) }.getOrNull()
-        if (codigo == 401) sesion.cerrar()
+        // Un 401 al iniciar sesión es solo una contraseña equivocada: no se borra nada.
+        // Si lo que venció es el token de avisos, se deja de consultar hasta el próximo ingreso;
+        // si es el de sesión, el ViewModel cierra la sesión.
+        if (codigo == 401 && soloAvisos) sesion.olvidarTokenAvisos()
         val mensaje = json?.optString("error")?.takeIf { it.isNotBlank() } ?: when (codigo) {
             403 -> "No tienes acceso a esta información"
             else -> "Ocurrió un error ($codigo). Intenta de nuevo."

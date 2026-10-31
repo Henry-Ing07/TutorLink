@@ -39,10 +39,10 @@ class MainActivity : FragmentActivity() {
 
     /** Al tocar una notificación se abre la pestaña de mensajes o de avisos. */
     private fun abrirDestino(intent: Intent) {
-        if (vm.usuario == null) return
+        // Si la app estaba cerrada, la pestaña se abre después de iniciar sesión.
         when (intent.getStringExtra(EXTRA_DESTINO)) {
-            "mensajes" -> vm.abrirPestana(Pestana.MENSAJES)
-            "avisos" -> vm.abrirPestana(Pestana.AVISOS)
+            "mensajes" -> vm.abrirDesdeNotificacion(Pestana.MENSAJES)
+            "avisos" -> vm.abrirDesdeNotificacion(Pestana.AVISOS)
         }
     }
 
